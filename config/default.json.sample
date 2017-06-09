@@ -1,0 +1,21 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 3000,
+    "routes": {
+        "authorize": "oauth/authorize",
+        "introspection": "oauth/validate"
+    }
+  },
+  "kong": {
+      "api": "http://kong:8001",
+      "gateway": "https://kong:8443",
+      "enableConsent": false
+  },
+  "clients": {
+
+  },
+  "authentication": {
+      "strategy": "cas"
+  }
+}
