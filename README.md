@@ -43,42 +43,32 @@ endpoints.
 
 ## Configuration
 
-The configuration file must be well formed JSON and be of the following form:
+The configuration file must be well formed YAML or JSON and be of the following form:
 
-```json
-{
-  "server": {
-    "host": "0.0.0.0",                      # IP/Host on which to listen
-    "port": 3000,                           # Port on which to listen
-    "publicUrl": "https://api.mydomain.com" # Publicly accessible URL for this service. Used for the SSO redirect URL.
-    "routes": {
-        "authorize": "oauth/authorize",     # URL on which to accept authorize calls
-        "introspection": "oauth/validate"   # URL on which to respond to profile/validate requests
-    },
-    "defaultApi": "auth"                    # Default Kong API to reference for all requests, see below.
-  },
-  "authentication": {
-    "url": "https://sso.mydomain.com"       # URL at which the SSO system resides
-  },
-  "kong": {
-      "api": "http://kong:8001",            # Base URL the Kong API
-      "gateway": "https://kong:8443",       # Base URL to the Kong gateway
-      "provisionKey": "12345",              # Provision key provided by Kong
-      "insecureSSL": true,                  # Whether to validate Kong's SSL certificate
-      "enableConsent": false                # Enable the user consent prompt, see below
-  },
-  "clients": {                              # List of client specific settings
-
-  },
-  "ui": {
-    "theme": "default"                      # The UI theme to use, see below.
-  },
-  "authentication": {
-      "strategy": "cas"                     # Authenticate strategy to use, see below.
-  }
-}
-
+```yml
+server:
+    host: "0.0.0.0"                      # IP/Host on which to listen
+    port: 3000                           # Port on which to listen
+    publicUrl: https://api.mydomain.com  # Publicly accessible URL for this service. Used for the SSO redirect URL.
+    routes:
+        authorize: oauth/authorize       # URL on which to accept authorize calls
+        introspection: oauth/validate    # URL on which to respond to profile/validate requests
+    defaultApi: auth                     # Default Kong API to reference for all requests, see below.
+kong:
+    api: http://kong:8001                # Base URL the Kong API
+    gateway: https://kong:8443           # Base URL to the Kong gateway
+    provisionKey: anf7n329fn             # Provision key provided by Kong
+    insecureSSL: true                    # Whether to validate Kong's SSL certificate
+    enableConsent: false                 # Enable the user consent prompt, see below
+ui:
+    theme: default                       # The UI theme to use, see below.
+authentication:
+    strategy: cas                        # Authenticate strategy to use, see below.
+    url: https://sso.mydomain.com        # URL at which the SSO system resides
 ```
+
+See the [config module](https://www.npmjs.com/package/config) for more details about
+format and features regarding how configuration is parsed.
 
 ### Default API
 
@@ -136,27 +126,6 @@ introspection endpoint would be behind Kong, requiring OAuth 2.0 authentication.
 
 One of the easiest ways to run this is through Docker. The standard `nodejs` Docker
 image should be used and can be invoked in the following way:
-
-```
-    kong_oauth_sso:
-        image: node
-        command: "node --inspect=0.0.0.0:5858 server.js"
-        working_dir: "/usr/src/app"
-        networks:
-            - private
-        ports:
-            - "127.0.0.1:5858:5858"
-        volumes:
-            - "../kong-oauth-sso:/usr/src/app"
-        environment:
-            - NODE_DEBUG=request
-            - DEBUG=*
-            - >
-                NODE_CONFIG={"server": {"publicUrl": "${PUBLIC_URL}"},"kong": {"provisionKey": "${KONG_SSO_PROVISION_KEY}"},"authentication":{"url": "${KONG_SSO_URL}"}}
-        hostname: kong_oauth_sso
-        links:
-            - kong:kong
-```
 
 ```
 docker run -ti node -w /usr/src/app -v "$(pwd)":/usr/src/app -p 3000:3000 "node server.js"

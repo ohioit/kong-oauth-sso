@@ -1,0 +1,19 @@
+server:
+    host: "0.0.0.0"                      # IP/Host on which to listen
+    port: 3000                           # Port on which to listen
+    publicUrl: https://api.mydomain.com  # Publicly accessible URL for this service. Used for the SSO redirect URL.
+    routes:
+        authorize: oauth/authorize       # URL on which to accept authorize calls
+        introspection: oauth/validate    # URL on which to respond to profile/validate requests
+    defaultApi: auth                     # Default Kong API to reference for all requests, see below.
+kong:
+    api: http://kong:8001                # Base URL the Kong API
+    gateway: https://kong:8443           # Base URL to the Kong gateway
+    provisionKey: anf7n329fn             # Provision key provided by Kong
+    insecureSSL: true                    # Whether to validate Kong's SSL certificate
+    enableConsent: false                 # Enable the user consent prompt, see below
+ui:
+    theme: default                       # The UI theme to use, see below.
+authentication:
+    strategy: cas                        # Authenticate strategy to use, see below.
+    url: https://sso.mydomain.com        # URL at which the SSO system resides

@@ -24,6 +24,7 @@
     "express": "^4.15.2",
     "express-handlebars": "^3.0.0",
     "express-session": "^1.15.2",
+    "js-yaml": "^3.8.4",
     "lodash": "^4.17.4",
     "mustache-express": "^1.2.4",
     "passport": "^0.3.2",

@@ -58,6 +58,7 @@ typings/
 .env
 
 # Configuration and Themes
-config/*.json
+config/*
+!config/sample.*
 views/*
 !views/default
