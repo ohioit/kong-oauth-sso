@@ -116,8 +116,10 @@ app.get([`/:api/${profilePath}`, `/${profilePath}`], function (req, res) {
     var groups = req.headers['x-consumer-groups'] || [];
 
     if (_.isString(groups)) {
-        groups = [groups];
+        groups = groups.split(',').map(x => x.trim());
     }
+
+    debug(`User ${req.headers['x-authenticated-userid']} logged in through ${req.headers['x-consumer-username']} with groups ${groups}.`);
     
     return res.render('introspection', {
         consumer: {
