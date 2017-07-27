@@ -5,6 +5,7 @@ server:
     routes:
         authorize: oauth/authorize       # URL on which to accept authorize calls
         introspection: oauth/validate    # URL on which to respond to profile/validate requests
+        logout: oauth/logout             # URL on which to respond to logout requests
     defaultApi: auth                     # Default Kong API to reference for all requests, see below.
 kong:
     api: http://kong:8001                # Base URL the Kong API

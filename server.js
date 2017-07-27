@@ -4,6 +4,7 @@ const _ = require('lodash');
 const config = require('./lib/config');
 const passport = require('passport');
 const express = require('express');
+const utils = require('./lib/utils');
 const fs = require('fs');
 const path = require('path');
 const debug = require('debug')('ohio::kosso::server');
@@ -23,6 +24,8 @@ const argv = require('yargs')
     .describe('t', 'Theme to use for views.').argv;
 
 debug(`Using UI theme ${argv.theme}.`);
+
+var authStrategies = {};
 debug('Looking for available authentication strategies...');
 fs.readdirSync('./lib/strategies').forEach(function (entry) {
     var name = path.basename(entry, 'js');
@@ -32,7 +35,8 @@ fs.readdirSync('./lib/strategies').forEach(function (entry) {
     }
 
     debug(`Plugging in strategy ${name}...`);
-    passport.use(name, require(`./lib/strategies/${name}`));
+    authStrategies[name] = require(`./lib/strategies/${name}`);
+    passport.use(name, authStrategies[name].strategy);
 });
 
 var app = express();
@@ -56,6 +60,7 @@ if (config.get('kong.insecureSSL', false)) {
 const defaultApi = config.get('server.defaultApi', '');
 const authorizePath = config.get('server.routes.authorize', 'oauth2/login');
 const profilePath = config.get('server.routes.introspection', 'oauth2/validate');
+const logoutPath = config.get('server.routes.logout', 'oauth2/logout');
 
 debug(`Default API set to ${defaultApi}`);
 
@@ -68,7 +73,10 @@ app.get([`/:api/${authorizePath}`, `/${authorizePath}`], passport.authenticate(s
     debug('Authenticated user, getting client information from Kong...');
 
     if (_.intersection(['client_id', 'response_type'], _.keys(req.query)).length !== 2) {
-        return res.status(400).send('400 Bad Request. `client_id` and `response_type` are required query parameters.');
+        return utils.renderError(req, res, {
+            status: 400,
+            details: '`client_id` and `response_type` are required query parameters.'
+        });
     }
 
     // First, we gotta fetch the client so we have it's information, including
@@ -88,18 +96,82 @@ app.get([`/:api/${authorizePath}`, `/${authorizePath}`], passport.authenticate(s
             debug('Skipping user consent as it\'s globally disabled.');
 
             // Provision an Access Token through Kong for the API.            
-            return kong.provision(api, client, req.query.response_type, req.query.scope, req.user.user).then(function (response) {
+            return kong.provision(api, client, req.query, req.user.user).then(function (response) {
                 // Kong will provide the Redirect URI to send the user to.
                 debug(`Redirecting client to ${response.redirect_uri}`);
                 return res.redirect(301, response.redirect_uri);
             }).catch(function (error) {
-                return res.status(error.status).send(error.details);
+                return utils.renderError(req, res, error);
             });
         }
         return res.status(200).send(client);
     }).catch(function (error) {
-        return res.status(error.status).send(error.details);
+        return utils.renderError(req, res, error);
     });
+});
+
+app.get([`/:api/${logoutPath}`, `/${logoutPath}`], function (req, res) {
+    debug('Logout parameters: ', req.query);
+
+    var clientId = req.query['client_id'];
+    var redirectUri = req.query['redirect_uri'];
+    var token = req.query['token'];
+
+    function logout() {
+        if (!_.isNil(redirectUri) && _.trim(redirectUri).length > 0) {
+            if ((_.isNil(clientId) || _.trim(clientId).length === 0)) {
+                return utils.renderError(req, res, {
+                    status: 400,
+                    details: 'A client ID is required when specifying a redirect URI.'
+                });
+
+            }
+
+            debug(`Loading client details for ${clientId}...`);
+            return kong.getClient(req.query['client_id']).then(function (client) {
+                debug(`Verifying that ${redirectUri} is valid for client ${clientId}...`);
+                const match = _.find(client.redirect_uri, function (uri) {
+                    debug(` - Testing against ${uri}...`);
+                    return _.trim(redirectUri).match(uri);
+                });
+
+                if (_.isNil(match)) {
+                    return utils.renderError(req, res, {
+                        status: 400,
+                        details: `${redirectUri} is not valid for ${clientId}.`
+                    });
+                }
+
+                req.logout();
+
+                if (_.has(authStrategies[strategy], 'logoutHandler')) {
+                    return authStrategies[strategy].logoutHandler(req, res, redirectUri);
+                } else {
+                    return res.redirect(301, redirectUri);
+                }
+            });
+        } else {
+            req.logout();
+
+            if (_.has(authStrategies[strategy], 'logoutHandler')) {
+                return authStrategies[strategy].logoutHandler(req, res, redirectUri);
+            } else {
+                return res.status(200).render(`logout-${req.accepts('json') ? 'json' : 'html'}`);
+            }
+        }
+    }
+
+    if (!_.isNil(token)) {
+        return kong.deleteToken(token).then(logout).catch(function (error) {
+            if (error.status === 404) {
+                logout();
+            } else {
+                return utils.renderError(req, res, error);
+            }
+        });
+    } else {
+        return logout();
+    }    
 });
 
 /**
@@ -110,7 +182,10 @@ app.get([`/:api/${authorizePath}`, `/${authorizePath}`], passport.authenticate(s
 app.get([`/:api/${profilePath}`, `/${profilePath}`], function (req, res) {
     debug('Validate request with headers:', req.headers);
     if (_.intersection(['x-consumer-username', 'x-consumer-id', 'x-authenticated-userid'], _.keys(req.headers)).length === 0) {
-        return res.status(401).contentType('application/json').render('401');
+        return utils.renderError(req, res, {
+            status: 401,
+            details: 'Full authentication is required to access this resource'
+        });
     }
 
     var groups = req.headers['x-consumer-groups'] || [];
@@ -121,7 +196,7 @@ app.get([`/:api/${profilePath}`, `/${profilePath}`], function (req, res) {
 
     debug(`User ${req.headers['x-authenticated-userid']} logged in through ${req.headers['x-consumer-username']} with groups ${groups}.`);
     
-    return res.render('introspection', {
+    var vars = {
         consumer: {
             name: req.headers['x-consumer-username'],
             id: req.headers['x-consumer-id'],
@@ -130,14 +205,23 @@ app.get([`/:api/${profilePath}`, `/${profilePath}`], function (req, res) {
         user: {
             name: req.headers['x-authenticated-userid']
         }
-    });
+    };
+
+    if ('x-consumer-custom-id' in req.headers) {
+        vars.consumer['customId'] = req.headers['x-consumer-custom-id'];
+    }
+
+    return res.render('introspection', vars);
 });
 
 /**
  * For all undefined URLs, puke out a 404.
  */
 app.get('*', function (req, res) {
-    res.status(404).send('404 Not Found.');
+    return utils.renderError(req, res, {
+        status: 400,
+        details: null
+    });
 });
 
 if (process.env.NODE_ENV === 'development') {
