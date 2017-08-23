@@ -60,7 +60,10 @@ if (config.get('kong.insecureSSL', false)) {
 const defaultApi = config.get('server.defaultApi', '');
 const authorizePath = config.get('server.routes.authorize', 'oauth2/login');
 const profilePath = config.get('server.routes.introspection', 'oauth2/validate');
+const impersonatePath = config.get('server.routes.impersonation', false);
 const logoutPath = config.get('server.routes.logout', 'oauth2/logout');
+
+const userGroupsHeader = config.get('introspection.headers.groups', null);
 
 debug(`Default API set to ${defaultApi}`);
 
@@ -107,6 +110,13 @@ app.get([`/:api/${authorizePath}`, `/${authorizePath}`], passport.authenticate(s
         return res.status(200).send(client);
     }).catch(function (error) {
         return utils.renderError(req, res, error);
+    });
+});
+
+app.all([`/:api/${authorizePath}`, `/${authorizePath}`], function (req, res) {
+    return utils.renderError(req, res, {
+        status: 405,
+        details: 'Method not allowed'
     });
 });
 
@@ -174,6 +184,13 @@ app.get([`/:api/${logoutPath}`, `/${logoutPath}`], function (req, res) {
     }    
 });
 
+app.all([`/:api/${logoutPath}`, `/${logoutPath}`], function (req, res) {
+    return utils.renderError(req, res, {
+        status: 405,
+        details: 'Method not allowed'
+    });
+});
+
 /**
  * Simple introspection endpoint that returns the consumer and user
  * information as a JSON response. Useful for APIs that are not behind
@@ -188,7 +205,14 @@ app.get([`/:api/${profilePath}`, `/${profilePath}`], function (req, res) {
         });
     }
 
+    var consumerGroups = req.headers['x-consumer-groups'] || [];
     var groups = req.headers['x-consumer-groups'] || [];
+    var userGroups = [];
+
+    if (userGroupsHeader && userGroupsHeader in req.headers) {
+        userGroups = req.headers[userGroupsHeader].split(',')
+        groups = groups.concat(userGroups);
+    }
 
     if (_.isString(groups)) {
         groups = groups.split(',').map(x => x.trim());
@@ -200,11 +224,15 @@ app.get([`/:api/${profilePath}`, `/${profilePath}`], function (req, res) {
         consumer: {
             name: req.headers['x-consumer-username'],
             id: req.headers['x-consumer-id'],
-            groups: groups
+            groups: consumerGroups
         },
+        authorities: groups,
+        actualUser: 'x-authenticated-actual-userid' in req.headers ? req.headers['x-authenticated-actual-userid'] : req.headers['x-authenticated-userid'],
         user: {
-            name: req.headers['x-authenticated-userid']
-        }
+            name: req.headers['x-authenticated-userid'],
+            groups: userGroups
+        },
+        headers: req.headers
     };
 
     if ('x-consumer-custom-id' in req.headers) {
@@ -214,13 +242,76 @@ app.get([`/:api/${profilePath}`, `/${profilePath}`], function (req, res) {
     return res.render('introspection', vars);
 });
 
-/**
- * For all undefined URLs, puke out a 404.
- */
-app.get('*', function (req, res) {
+app.all([`/:api/${profilePath}`, `/${profilePath}`], function (req, res) {
     return utils.renderError(req, res, {
-        status: 400,
-        details: null
+        status: 405,
+        details: 'Method not allowed'
+    });
+});
+
+/**
+ * Route at which users can impersonate other users, only define if set.
+ */
+if (impersonatePath) {
+    debug(`Enabling OAuth 2.0 impersonation at ${impersonatePath}...`);
+
+    app.post([`/:api/${impersonatePath}/:target`, `/${impersonatePath}/:target`], function (req, res) {
+        const token = utils.parseToken(req);
+
+        if (!token) {
+            return utils.renderError(req, res, {
+                status: 401,
+                details: 'Full authentication is required to access this resource'
+            });
+        }
+
+        const target = req.params.target;
+        const api = `${req.params.api ? req.params.api : defaultApi}`;
+
+        return kong.impersonate(target, api, token).then(function (result) {
+            return res.status(result.status).send(result.data);
+        }).catch(function (error) {
+            return utils.renderError(req, res, {
+                status: error.status,
+                details: error.data
+            });
+        });
+    });
+
+    app.delete([`/:api/${impersonatePath}`, `/${impersonatePath}`], function (req, res) {
+        const token = utils.parseToken(req);
+
+        if (!token) {
+            return utils.renderError(req, res, {
+                status: 401,
+                details: 'Full authentication is required to access this resource'
+            });
+        }
+
+        const api = `${req.params.api ? req.params.api : defaultApi}`;
+
+        return kong.unimpersonate(api, token).then(function (result) {
+            return res.status(result.status).send(result.data);
+        }).catch(function (error) {
+            return utils.renderError(req, res, {
+                status: error.status,
+                details: error.data
+            });
+        });
+    });
+
+    app.all([`/:api/${impersonatePath}`, `/${impersonatePath}`], function (req, res) {
+        return utils.renderError(req, res, {
+            status: 405,
+            details: 'Method not allowed'
+        });
+    });
+}
+
+app.all('*', function (req, res) {
+    return utils.renderError(req, res, {
+        status: 404,
+        details: 'Not Found'
     });
 });
 

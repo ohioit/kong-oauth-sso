@@ -10,7 +10,10 @@ solution. This provides the following features:
 - Authentication via Passport with pluggable authentication strategies.
   - Currently only CAS is implemented, but they're fairly trivial. See below.
 - Simple introspection endpoint that, when setup behind Kong, returns user
-  and consumer information as JSON.
+  and consumer information as JSON. Compatible with the
+  [Kong Userinfo Plugin](https://github.com/ohioit/kong-userinfo-plugin).
+- Impersonation of OAuth 2.0 users using the
+[Kong OAuth Impersonation Plugin](https://github.com/ohioit/kong-oauth-impersonation-plugin).
 
 > Note: The user consent prompt is not implemented so the `enableConsent` flag
 must always be false in the configuration. This should be implemented shortly.
@@ -35,7 +38,7 @@ credentials to properly provision access tokens.
 
 ## Usage
 
-You'll first have to create a `config/default.json` or an environment specific
+You'll first have to create a `config/default.yaml` or an environment specific
 configuration file (see [config](https://www.npmjs.com/package/config) for details).
 A short sample is provided and detailed documentation about the options is available
 below. Then, simply start the server and point your application at the configured
@@ -53,6 +56,8 @@ server:
     routes:
         authorize: oauth/authorize       # URL on which to accept authorize calls
         introspection: oauth/validate    # URL on which to respond to profile/validate requests
+        logout: oauth/logout             # URL on which to respond to logout requests
+        impersonation: oauth/impersonate # URL with which we can impersonate other users
     defaultApi: auth                     # Default Kong API to reference for all requests, see below.
 kong:
     api: http://kong:8001                # Base URL the Kong API
@@ -60,11 +65,16 @@ kong:
     provisionKey: anf7n329fn             # Provision key provided by Kong
     insecureSSL: true                    # Whether to validate Kong's SSL certificate
     enableConsent: false                 # Enable the user consent prompt, see below
+introspection:
+    headers:
+        name: x-userinfo-displayname     # HTTP Header containing the user's name
+        groups: x-userinfo-memberof      # HTTP header containing the user's groups
 ui:
     theme: default                       # The UI theme to use, see below.
 authentication:
     strategy: cas                        # Authenticate strategy to use, see below.
     url: https://sso.mydomain.com        # URL at which the SSO system resides
+
 ```
 
 See the [config module](https://www.npmjs.com/package/config) for more details about
@@ -121,6 +131,14 @@ server implements such an endpoint. For this to work, the introspection endpoint
 HTTP headers sent by Kong to generate a JSON representation as a response. In this
 scenario, this application's _authorize_ endpoint would be publicly exposed while it's
 introspection endpoint would be behind Kong, requiring OAuth 2.0 authentication.
+
+## Impersonation
+
+If enabled, an endpoint is provided to allow a user to be impersonated. This will
+provision impersonation to the [OAuth Impersonation Plugin](https://github.com/ohioit/kong-oauth-impersonation-plugin).
+Currently, not authorization is done prior to impersonation although that will
+likely be coming. At this time, you'll need to implement your own which can be done
+by putting the introspection endpoint behind Kong itself.
 
 ## Docker
 

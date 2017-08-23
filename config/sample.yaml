@@ -6,6 +6,7 @@ server:
         authorize: oauth/authorize       # URL on which to accept authorize calls
         introspection: oauth/validate    # URL on which to respond to profile/validate requests
         logout: oauth/logout             # URL on which to respond to logout requests
+        impersonation: oauth/impersonate # URL with which we can impersonate other users
     defaultApi: auth                     # Default Kong API to reference for all requests, see below.
 kong:
     api: http://kong:8001                # Base URL the Kong API
@@ -13,6 +14,10 @@ kong:
     provisionKey: anf7n329fn             # Provision key provided by Kong
     insecureSSL: true                    # Whether to validate Kong's SSL certificate
     enableConsent: false                 # Enable the user consent prompt, see below
+introspection:
+    headers:
+        name: x-userinfo-displayname     # HTTP Header containing the user's name
+        groups: x-userinfo-memberof      # HTTP header containing the user's groups
 ui:
     theme: default                       # The UI theme to use, see below.
 authentication:
